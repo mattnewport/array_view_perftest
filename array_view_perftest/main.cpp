@@ -46,8 +46,8 @@ inline auto normalize(const Vec3f& x) {
     return x * (1.0f / magnitude(x));
 }
 
-template <typename T>
-constexpr T clamp(T x, T a, T b) {
+template <typename T, typename U, typename V>
+constexpr auto clamp(T x, U a, V b) {
     return x < a ? a : x > b ? b : x;
 }
 
