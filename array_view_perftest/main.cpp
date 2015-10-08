@@ -122,6 +122,36 @@ auto calculateHeightfieldNormalsGslArrayView(const Heightfield& heightfield) {
     return normals;
 }
 
+auto calculateHeightfieldNormalsParallelStlArrayView(const Heightfield& heightfield) {
+    namespace pstl = std::experimental::D4087;
+    const auto bounds = pstl::bounds<2>{heightfield.height, heightfield.width};
+    auto heightsView = pstl::array_view<const uint16_t, 2>{bounds, heightfield.heights};
+    auto getHeight = [ heightsView, w = heightsView.bounds()[1], h = heightsView.bounds()[0] ](
+        auto idx, pstl::index<2> off) {
+        idx += off;
+        idx[0] = clamp(idx[0], 0, h - 1);
+        idx[1] = clamp(idx[1], 0, w - 1);
+        return heightsView[idx];
+    };
+
+    const auto gridStepX = heightfield.gridStepX();
+    const auto gridStepY = heightfield.gridStepY();
+    std::vector<Vec3f> normals(heightfield.heights.size());
+    auto normalsView = pstl::array_view<Vec3f, 2>{bounds, normals};
+    for (auto idx : normalsView.bounds()) {
+        const auto yl = getHeight(idx, {0, -1});
+        const auto yr = getHeight(idx, {0, 1});
+        const auto yd = getHeight(idx, {-1, 0});
+        const auto yu = getHeight(idx, {1, 0});
+        const auto normal =
+            normalize(Vec3f{2.0f * gridStepY * (yl - yr), 4.0f * gridStepX * gridStepY,
+                            2.0f * gridStepX * (yd - yu)});
+        assert(normal.y > 0.0f);
+        normalsView[idx] = normal;
+    }
+    return normals;
+}
+
 auto calculateHeightfieldNormalsCArray(const Heightfield& heightfield) {
     auto getHeight = [heights = heightfield.heights.data(), 
                       w = heightfield.width, 
@@ -184,10 +214,6 @@ void printHeightfield(const Heightfield& heightfield) {
               << ", " << heightfield.heightM << ", " << heightfield.heights[0] << std::endl;
 }
 
-void printNormals(const std::vector<Vec3f>& normals) {
-    std::cout << normals[0].x << ", " << normals[0].y << ", " << normals[0].z << std::endl;
-}
-
 auto timeInS = [](auto f) {
     const auto start = std::chrono::high_resolution_clock::now();
     f();
@@ -197,36 +223,32 @@ auto timeInS = [](auto f) {
            1e-9f;
 };
 
-void writeNormals(const std::vector<Vec3f>& normals, const std::string& filename) {
-    auto out = std::ofstream{filename, std::ios::out | std::ios::binary};
-    out.write(reinterpret_cast<const char*>(normals.data()), normals.size() * sizeof(normals[0]));
-}
-
 auto testCalculateNormalsFunc = [](auto func, const Heightfield& heightfield,
                                    std::string funcname) {
     auto normals = std::vector<Vec3f>{};
     const auto funcTime = timeInS([&] { normals = func(heightfield); });
-    writeNormals(normals, funcname + ".dat");
-    return make_tuple(normals, funcTime);
+    // We write results to a file to ensure the optimizer doesn't get too clever and eliminate
+    // calculations for unused results.
+    auto out = std::ofstream{funcname + ".dat", std::ios::out | std::ios::binary};
+    out.write(reinterpret_cast<const char*>(normals.data()), normals.size() * sizeof(normals[0]));
+    return make_tuple(normals, funcTime, funcname);
 };
-
-#define TEST_CALCULATE_NORMALS_FUNC(f) testCalculateNormalsFunc(f, heightfield, #f)
 
 int main() {
     const auto heightfield = loadHeightfield();
 
-    auto gslResults = TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsGslArrayView);
-    auto cArrayResults = TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray);
-    auto stdVectorResults = TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsStdVector);
+#define TEST_CALCULATE_NORMALS_FUNC(f) testCalculateNormalsFunc(f, heightfield, #f)
+    // Run the C array version once to warm the cache
+    auto firstResults = TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray);
+    auto results = {TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray),
+                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsGslArrayView),
+                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsParallelStlArrayView),
+                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsStdVector)};
+#undef TEST_CALCULATE_NORMALS_FUNC
 
-    assert(get<0>(gslResults) == get<0>(cArrayResults));
-    assert(get<0>(gslResults) == get<0>(stdVectorResults));
-
-    printHeightfield(heightfield);
-    printNormals(std::get<0>(gslResults));
-
-    std::cout << "calculateHeightfieldNormalsGslArrayView took " << std::get<1>(gslResults) << "s\n"
-              << "calculateHeightfieldNormalsCArray took " << std::get<1>(cArrayResults) << "s\n"
-              << "calculateHeightfieldNormalsStdVector took " << std::get<1>(stdVectorResults)
-              << "s\n" << std::endl;
+    for (const auto& res : results) {
+        (void)firstResults;
+        assert(std::get<0>(firstResults) == std::get<0>(res));
+        std::cout << std::get<2>(res) << ", " << std::get<1>(res) << "s\n";
+    }
 }
