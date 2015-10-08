@@ -246,9 +246,11 @@ int main() {
                     TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsStdVector)};
 #undef TEST_CALCULATE_NORMALS_FUNC
 
+    auto resultsFile = std::ofstream{"results.csv", std::ios::app};
     for (const auto& res : results) {
         (void)firstResults;
         assert(std::get<0>(firstResults) == std::get<0>(res));
-        std::cout << std::get<2>(res) << ", " << std::get<1>(res) << "s\n";
+        resultsFile << CONFIG_NAME ", " << PLATFORM_NAME ", " << std::get<2>(res) << ", "
+                    << std::get<1>(res) << "s\n";
     }
 }
