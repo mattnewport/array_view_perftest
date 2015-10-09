@@ -45,8 +45,8 @@ struct Heightfield {
     float widthM = 0.0f, heightM = 0.0f;
     std::vector<uint16_t> heights;
 
-    float gridStepX() const { return widthM / width; }
-    float gridStepY() const { return heightM / height; }
+    auto gridStepX() const { return widthM / width; }
+    auto gridStepY() const { return heightM / height; }
 };
 
 auto loadHeightfield() {
@@ -177,9 +177,9 @@ auto timeInS = [](auto f) {
 
 auto testCalculateNormalsFunc = [](auto func, const Heightfield& heightfield,
                                    std::string funcname) {
-    auto normals = std::vector<Vec3f>{};
+    auto normals = decltype(func(heightfield)){};
     const auto funcTime = timeInS([&] { normals = func(heightfield); });
-    // We write results to a file to ensure the optimizer doesn't get too clever and eliminate
+    // Write results to a file to ensure the optimizer doesn't get too clever and eliminate
     // calculations for unused results.
     auto normalsView = gsl::as_array_view(normals);
     auto out = std::ofstream{funcname + ".dat", std::ios::out | std::ios::binary};
@@ -194,10 +194,11 @@ int main() {
 #define TEST_CALCULATE_NORMALS_FUNC(f) testCalculateNormalsFunc(f, heightfield, #f)
     // Run the C array version once to warm the cache
     auto firstResults = TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray);
-    auto results = {TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray),
-                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsGslArrayView),
-                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsParallelStlArrayView),
-                    TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsStdVector)};
+    const auto& results = {
+        TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsCArray),
+        TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsGslArrayView),
+        TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsParallelStlArrayView),
+        TEST_CALCULATE_NORMALS_FUNC(calculateHeightfieldNormalsStdVector)};
 #undef TEST_CALCULATE_NORMALS_FUNC
 
     auto resultsFile = std::ofstream{"results.csv", std::ios::app};
