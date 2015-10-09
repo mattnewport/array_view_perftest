@@ -1,9 +1,8 @@
-#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -14,19 +13,11 @@
 #pragma warning(pop)
 #include <ParallelSTL/include/experimental/array_view>
 
-#pragma once
-
-#include <cmath>
-#include <functional>
-#include <iterator>
-#include <type_traits>
-#include <utility>
-
 struct Vec3f {
     float x, y, z;
 };
 
-auto operator==(const Vec3f& x, const Vec3f& y) {
+constexpr auto operator==(const Vec3f& x, const Vec3f& y) {
     return std::tie(x.x, x.y, x.z) == std::tie(y.x, y.y, y.z);
 }
 
@@ -82,7 +73,9 @@ auto loadHeightfield() {
     };
     auto readVector = [&data](int size) {
         std::vector<uint16_t> x(size);
-        data.read(reinterpret_cast<char*>(x.data()), x.size() * sizeof(x[0]));
+        auto xView = gsl::as_array_view(x);
+        data.read(reinterpret_cast<char*>(xView.as_writeable_bytes().data()),
+                  xView.as_writeable_bytes().size());
         return x;
     };
     const auto width = readInt32();
@@ -209,11 +202,6 @@ auto calculateHeightfieldNormalsStdVector(const Heightfield& heightfield) {
     return normals;
 }
 
-void printHeightfield(const Heightfield& heightfield) {
-    std::cout << heightfield.width << ", " << heightfield.height << ", " << heightfield.widthM
-              << ", " << heightfield.heightM << ", " << heightfield.heights[0] << std::endl;
-}
-
 auto timeInS = [](auto f) {
     const auto start = std::chrono::high_resolution_clock::now();
     f();
@@ -229,8 +217,10 @@ auto testCalculateNormalsFunc = [](auto func, const Heightfield& heightfield,
     const auto funcTime = timeInS([&] { normals = func(heightfield); });
     // We write results to a file to ensure the optimizer doesn't get too clever and eliminate
     // calculations for unused results.
+    auto normalsView = gsl::as_array_view(normals);
     auto out = std::ofstream{funcname + ".dat", std::ios::out | std::ios::binary};
-    out.write(reinterpret_cast<const char*>(normals.data()), normals.size() * sizeof(normals[0]));
+    out.write(reinterpret_cast<const char*>(normalsView.as_bytes().data()),
+              normalsView.as_bytes().size());
     return make_tuple(normals, funcTime, funcname);
 };
 
